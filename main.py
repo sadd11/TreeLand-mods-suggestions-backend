@@ -1,14 +1,16 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import paramiko
 import json
 import os
 
 app = Flask(__name__)
+CORS(app)  # <-- разрешаем запросы с других сайтов
 
-# Данные берём из Render → Environment Variables
 SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
+
 
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
