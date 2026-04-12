@@ -6,9 +6,9 @@ import os
 app = Flask(__name__)
 
 # Данные берём из Render → Environment Variables
-SFTP_HOST = os.getenv("SFTP_HOST")
-SFTP_USER = os.getenv("SFTP_USER")
-SFTP_PASS = os.getenv("SFTP_PASS")
+SFTP_HOST = os.getenv("sftp://generation.bkn.s-hub.xyz:2022")
+SFTP_USER = os.getenv("weewerwy.44b9896b")
+SFTP_PASS = os.getenv("55555Mir42spider99lol")
 
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
