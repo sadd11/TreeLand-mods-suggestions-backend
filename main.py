@@ -13,7 +13,7 @@ SFTP_PASS = os.getenv("SFTP_PASS")
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
 def sftp_connect():
-    client = paramiko.Transport((SFTP_HOST, 22))
+    client = paramiko.Transport((SFTP_HOST, 2022))
     client.connect(username=SFTP_USER, password=SFTP_PASS)
     return client
 
