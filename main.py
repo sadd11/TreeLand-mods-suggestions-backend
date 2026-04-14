@@ -8,82 +8,90 @@ import time
 app = Flask(__name__)
 CORS(app)
 
+# Конфигурация
 SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
 ADMIN_PASSWORD = "tl-358856"
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
-def sftp_connect():
-    client = paramiko.Transport((SFTP_HOST, 2022))
-    client.connect(username=SFTP_USER, password=SFTP_PASS)
-    return client
+# Кэш в оперативной памяти
+cache_data = None
 
-def get_data(sftp):
+def get_sftp():
+    transport = paramiko.Transport((SFTP_HOST, 2022))
+    transport.connect(username=SFTP_USER, password=SFTP_PASS)
+    return paramiko.SFTPClient.from_transport(transport), transport
+
+def load_from_disk():
+    global cache_data
     try:
-        with sftp.open(REMOTE_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
+        sftp, t = get_sftp()
+        try:
+            with sftp.open(REMOTE_FILE, "r") as f:
+                cache_data = json.load(f)
+        except:
+            cache_data = []
+        sftp.close()
+        t.close()
+    except Exception as e:
+        print(f"Ошибка загрузки: {e}")
+        cache_data = []
 
-def save_data(sftp, data):
-    with sftp.open(REMOTE_FILE, "w") as f:
-        f.write(json.dumps(data, indent=2))
+def save_to_disk():
+    global cache_data
+    try:
+        sftp, t = get_sftp()
+        with sftp.open(REMOTE_FILE, "w") as f:
+            f.write(json.dumps(cache_data, indent=2))
+        sftp.close()
+        t.close()
+    except Exception as e:
+        print(f"Ошибка сохранения: {e}")
 
 @app.route("/list", methods=["GET"])
 def list_mods():
-    client = sftp_connect()
-    sftp = paramiko.SFTPClient.from_transport(client)
-    data = get_data(sftp)
-    sftp.close()
-    client.close()
-    return jsonify(data)
+    if cache_data is None: load_from_disk()
+    return jsonify(cache_data)
 
 @app.route("/add", methods=["POST"])
 def add_mod():
-    body = request.json
-    client = sftp_connect()
-    sftp = paramiko.SFTPClient.from_transport(client)
-    data = get_data(sftp)
+    if cache_data is None: load_from_disk()
     
-    new_mod = {
-        "id": str(int(time.time() * 1000)),
+    body = request.json
+    new_item = {
+        "id": str(int(time.time() * 1000)), # Всегда строка
         "link": body.get("link"),
         "desc": body.get("desc", ""),
-        "status": "pending" # По умолчанию — на рассмотрении
+        "status": "pending"
     }
-    data.append(new_mod)
-    save_data(sftp, data)
-    
-    sftp.close()
-    client.close()
+    cache_data.append(new_item)
+    save_to_disk()
     return jsonify({"status": "ok"})
 
 @app.route("/admin_action", methods=["POST"])
 def admin_action():
+    global cache_data
+    if cache_data is None: load_from_disk()
+    
     body = request.json
-    # Проверка пароля на уровне сервера — это важно!
     if body.get("password") != ADMIN_PASSWORD:
         return jsonify({"error": "Wrong password"}), 403
 
-    action = body.get("action") # 'approve', 'reject', 'delete'
-    mod_id = body.get("id")
-
-    client = sftp_connect()
-    sftp = paramiko.SFTPClient.from_transport(client)
-    data = get_data(sftp)
+    mod_id = str(body.get("id")) # Принудительно в строку
+    action = body.get("action")
 
     if action == "delete":
-        data = [m for m in data if m["id"] != mod_id]
+        # Сравнение через str() для обхода проблем с форматом в JSON
+        cache_data = [m for m in cache_data if str(m.get("id")) != mod_id]
     else:
-        for m in data:
-            if m["id"] == mod_id:
+        for m in cache_data:
+            if str(m.get("id")) == mod_id:
                 m["status"] = "approved" if action == "approve" else "rejected"
 
-    save_data(sftp, data)
-    sftp.close()
-    client.close()
-    return jsonify({"status": "success"})
+    save_to_disk()
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
+    load_from_disk()
     app.run(host="0.0.0.0", port=10000)
