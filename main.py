@@ -8,14 +8,12 @@ import time
 app = Flask(__name__)
 CORS(app)
 
-# Конфигурация
 SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
 ADMIN_PASSWORD = "tl-358856"
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
-# Кэш в оперативной памяти
 cache_data = None
 
 def get_sftp():
@@ -23,75 +21,74 @@ def get_sftp():
     transport.connect(username=SFTP_USER, password=SFTP_PASS)
     return paramiko.SFTPClient.from_transport(transport), transport
 
-def load_from_disk():
+def load_data():
     global cache_data
     try:
         sftp, t = get_sftp()
-        try:
-            with sftp.open(REMOTE_FILE, "r") as f:
-                cache_data = json.load(f)
-        except:
-            cache_data = []
+        with sftp.open(REMOTE_FILE, "r") as f:
+            cache_data = json.load(f)
         sftp.close()
         t.close()
-    except Exception as e:
-        print(f"Ошибка загрузки: {e}")
+    except:
         cache_data = []
 
-def save_to_disk():
-    global cache_data
+def save_data():
     try:
         sftp, t = get_sftp()
         with sftp.open(REMOTE_FILE, "w") as f:
-            f.write(json.dumps(cache_data, indent=2))
+            f.write(json.dumps(cache_data, indent=2, ensure_ascii=False))
         sftp.close()
         t.close()
     except Exception as e:
-        print(f"Ошибка сохранения: {e}")
+        print(f"Error saving: {e}")
 
 @app.route("/list", methods=["GET"])
 def list_mods():
-    if cache_data is None: load_from_disk()
+    if cache_data is None: load_data()
     return jsonify(cache_data)
 
 @app.route("/add", methods=["POST"])
 def add_mod():
-    if cache_data is None: load_from_disk()
-    
+    if cache_data is None: load_data()
     body = request.json
+    
+    # Генерируем новый ID как число (по твоему формату)
+    new_id = int(time.time())
+    
     new_item = {
-        "id": str(int(time.time() * 1000)), # Всегда строка
+        "id": new_id,
         "link": body.get("link"),
         "desc": body.get("desc", ""),
         "status": "pending"
     }
     cache_data.append(new_item)
-    save_to_disk()
+    save_data()
     return jsonify({"status": "ok"})
 
 @app.route("/admin_action", methods=["POST"])
 def admin_action():
     global cache_data
-    if cache_data is None: load_from_disk()
-    
     body = request.json
     if body.get("password") != ADMIN_PASSWORD:
-        return jsonify({"error": "Wrong password"}), 403
+        return jsonify({"error": "Auth"}), 403
 
-    mod_id = str(body.get("id")) # Принудительно в строку
+    if cache_data is None: load_data()
+    
+    # Важно: переводим в строку для универсального сравнения
+    target_id = str(body.get("id"))
     action = body.get("action")
 
     if action == "delete":
-        # Сравнение через str() для обхода проблем с форматом в JSON
-        cache_data = [m for m in cache_data if str(m.get("id")) != mod_id]
+        # Сравниваем ID как строки, чтобы не важно было, число это или строка в JSON
+        cache_data = [m for m in cache_data if str(m.get("id")) != target_id]
     else:
         for m in cache_data:
-            if str(m.get("id")) == mod_id:
+            if str(m.get("id")) == target_id:
                 m["status"] = "approved" if action == "approve" else "rejected"
 
-    save_to_disk()
+    save_data()
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
-    load_from_disk()
+    load_data()
     app.run(host="0.0.0.0", port=10000)
