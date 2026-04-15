@@ -52,7 +52,6 @@ def add_mod():
     if cache_data is None: load_data()
     body = request.json
     
-    # Генерируем новый ID как число (по твоему формату)
     new_id = int(time.time())
     
     new_item = {
@@ -74,18 +73,19 @@ def admin_action():
 
     if cache_data is None: load_data()
     
-    # Важно: переводим в строку для универсального сравнения
     target_id = str(body.get("id"))
     action = body.get("action")
+    reason = body.get("reason", "") # Принимаем причину из запроса
 
     if action == "delete":
-        # Сравниваем ID как строки, чтобы не важно было, число это или строка в JSON
         cache_data = [m for m in cache_data if str(m.get("id")) != target_id]
     else:
         for m in cache_data:
             if str(m.get("id")) == target_id:
                 m["status"] = "approved" if action == "approve" else "rejected"
-
+                if action == "reject":
+                    m["reason"] = reason # Сохраняем причину только при отклонении
+    
     save_data()
     return jsonify({"status": "ok"})
 
