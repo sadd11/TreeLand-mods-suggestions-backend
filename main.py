@@ -51,9 +51,7 @@ def list_mods():
 def add_mod():
     if cache_data is None: load_data()
     body = request.json
-    
     new_id = int(time.time())
-    
     new_item = {
         "id": new_id,
         "link": body.get("link"),
@@ -75,16 +73,21 @@ def admin_action():
     
     target_id = str(body.get("id"))
     action = body.get("action")
-    reason = body.get("reason", "") # Принимаем причину из запроса
+    reason = body.get("reason", "")
+    comment = body.get("comment", "") # Новое поле для комментария
 
     if action == "delete":
         cache_data = [m for m in cache_data if str(m.get("id")) != target_id]
     else:
         for m in cache_data:
             if str(m.get("id")) == target_id:
-                m["status"] = "approved" if action == "approve" else "rejected"
-                if action == "reject":
-                    m["reason"] = reason # Сохраняем причину только при отклонении
+                if action == "approve":
+                    m["status"] = "approved"
+                elif action == "reject":
+                    m["status"] = "rejected"
+                    m["reason"] = reason
+                elif action == "set_comment": # Новое действие для обновления комментария
+                    m["comment"] = comment
     
     save_data()
     return jsonify({"status": "ok"})
@@ -92,3 +95,4 @@ def admin_action():
 if __name__ == "__main__":
     load_data()
     app.run(host="0.0.0.0", port=10000)
+    
