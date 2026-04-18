@@ -2,3 +2,4 @@ flask
 gunicorn
 paramiko
 flask-cors
+requests
