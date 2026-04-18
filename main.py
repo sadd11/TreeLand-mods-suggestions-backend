@@ -4,15 +4,22 @@ import paramiko
 import json
 import os
 import time
+import requests
 
 app = Flask(__name__)
 CORS(app)
 
+# Настройки SFTP
 SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
 ADMIN_PASSWORD = "tl-358856"
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
+
+# Настройки Telegram
+TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TG_THREAD_ID = os.getenv("TELEGRAM_THREAD_ID")
 
 cache_data = None
 
@@ -41,6 +48,23 @@ def save_data():
         t.close()
     except Exception as e:
         print(f"Error saving: {e}")
+
+def send_tg_notification(message):
+    """Отправка сообщения в конкретную тему Telegram группы"""
+    if not TG_TOKEN or not TG_CHAT_ID:
+        return
+    
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "message_thread_id": TG_THREAD_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Ошибка отправки в TG: {e}")
 
 @app.route("/list", methods=["GET"])
 def list_mods():
@@ -74,20 +98,29 @@ def admin_action():
     target_id = str(body.get("id"))
     action = body.get("action")
     reason = body.get("reason", "")
-    comment = body.get("comment", "") # Новое поле для комментария
+    comment = body.get("comment", "")
 
-    if action == "delete":
-        cache_data = [m for m in cache_data if str(m.get("id")) != target_id]
-    else:
-        for m in cache_data:
-            if str(m.get("id")) == target_id:
-                if action == "approve":
-                    m["status"] = "approved"
-                elif action == "reject":
-                    m["status"] = "rejected"
-                    m["reason"] = reason
-                elif action == "set_comment": # Новое действие для обновления комментария
-                    m["comment"] = comment
+    for m in cache_data:
+        if str(m.get("id")) == target_id:
+            msg = ""
+            if action == "approve":
+                m["status"] = "approved"
+                msg = f"✅ *Мод одобрен!*\n\n🔗 [Открыть мод]({m['link']})\n📝 Описание: {m['desc']}"
+            elif action == "reject":
+                m["status"] = "rejected"
+                m["reason"] = reason
+                msg = f"❌ *Мод отклонен*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
+            elif action == "set_comment":
+                m["comment"] = comment
+                # Для комментария уведомление можно не слать или сделать по желанию
+            elif action == "delete":
+                cache_data = [mod for mod in cache_data if str(mod.get("id")) != target_id]
+                save_data()
+                return jsonify({"status": "ok"})
+            
+            if msg:
+                send_tg_notification(msg)
+            break
     
     save_data()
     return jsonify({"status": "ok"})
