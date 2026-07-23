@@ -90,8 +90,13 @@ def send_discord_webhook(message):
         "content": message
     }
 
+    # Исправление: добавляем User-Agent, чтобы Discord не отклонял запрос
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
     except Exception as e:
         print(f"Ошибка Discord Webhook: {e}")
 
