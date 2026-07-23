@@ -16,15 +16,16 @@ SFTP_PASS = os.getenv("SFTP_PASS")
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
 # Пароль админа
-ADMIN_PASSWORD = "tl-358856"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "tl-358856")
 
 # Telegram
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TG_THREAD_ID = os.getenv("TELEGRAM_THREAD_ID")
 
-# Discord Webhook
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+# Discord Bot
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 
 cache_data = None
 
@@ -45,7 +46,8 @@ def load_data():
             cache_data = json.load(f)
         sftp.close()
         t.close()
-    except:
+    except Exception as e:
+        print(f"Error loading: {e}")
         cache_data = []
 
 
@@ -69,36 +71,41 @@ def send_tg_notification(message):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {
         "chat_id": TG_CHAT_ID,
-        "message_thread_id": TG_THREAD_ID,
         "text": message,
         "parse_mode": "Markdown"
     }
+    if TG_THREAD_ID:
+        payload["message_thread_id"] = TG_THREAD_ID
 
     try:
-        requests.post(url, json=payload)
+        requests.post(url, json=payload, timeout=5)
     except Exception as e:
         print(f"Ошибка отправки в TG: {e}")
 
 
-# ---------------- Discord Webhook ----------------
+# ---------------- Discord Bot API ----------------
 
-def send_discord_webhook(message):
-    if not DISCORD_WEBHOOK_URL:
+def send_discord_bot_message(message):
+    if not DISCORD_BOT_TOKEN or not DISCORD_CHANNEL_ID:
+        print("ОШИБКА DISCORD: Не задан DISCORD_BOT_TOKEN или DISCORD_CHANNEL_ID!")
         return
     
+    url = f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages"
+    
+    headers = {
+        "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
     payload = {
         "content": message
     }
 
-    # Исправление: добавляем User-Agent, чтобы Discord не отклонял запрос
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
-
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
+        res = requests.post(url, json=payload, headers=headers, timeout=5)
+        print(f"Ответ Discord Bot API: Status {res.status_code}, Response: {res.text}")
     except Exception as e:
-        print(f"Ошибка Discord Webhook: {e}")
+        print(f"Ошибка отправки через Discord бота: {e}")
 
 
 # ---------------- API ----------------
@@ -115,13 +122,19 @@ def add_mod():
     if cache_data is None:
         load_data()
 
-    body = request.json
+    body = request.json or {}
+    link = body.get("link")
+    desc = body.get("desc", "")
+
+    if not link:
+        return jsonify({"error": "No link provided"}), 400
+
     new_id = int(time.time())
 
     new_item = {
         "id": new_id,
-        "link": body.get("link"),
-        "desc": body.get("desc", ""),
+        "link": link,
+        "desc": desc,
         "status": "pending"
     }
 
@@ -134,7 +147,7 @@ def add_mod():
 @app.route("/admin_action", methods=["POST"])
 def admin_action():
     global cache_data
-    body = request.json
+    body = request.json or {}
 
     if body.get("password") != ADMIN_PASSWORD:
         return jsonify({"error": "Auth"}), 403
@@ -149,16 +162,29 @@ def admin_action():
 
     for m in cache_data:
         if str(m.get("id")) == target_id:
-            msg = ""
 
             if action == "approve":
                 m["status"] = "approved"
-                msg = f"✅ *Мод одобрен!*\n\n🔗 [Открыть мод]({m['link']})\n📝 Описание: {m['desc']}"
+                
+                # Текст для Telegram
+                tg_msg = f"✅ *Мод одобрен!*\n\n🔗 [Открыть мод]({m['link']})\n📝 Описание: {m['desc']}"
+                send_tg_notification(tg_msg)
+
+                # Текст для Discord
+                ds_msg = f"✅ **Мод одобрен!**\n\n🔗 Ссылка: {m['link']}\n📝 Описание: {m['desc']}"
+                send_discord_bot_message(ds_msg)
 
             elif action == "reject":
                 m["status"] = "rejected"
                 m["reason"] = reason
-                msg = f"❌ *Мод отклонён*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
+                
+                # Текст для Telegram
+                tg_msg = f"❌ *Мод отклонён*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
+                send_tg_notification(tg_msg)
+
+                # Текст для Discord
+                ds_msg = f"❌ **Мод отклонён**\n\n🔗 Ссылка: {m['link']}\n🚫 Причина: {reason}"
+                send_discord_bot_message(ds_msg)
 
             elif action == "set_comment":
                 m["comment"] = comment
@@ -168,10 +194,6 @@ def admin_action():
                 save_data()
                 return jsonify({"status": "ok"})
 
-            if msg:
-                send_tg_notification(msg)
-                send_discord_webhook(msg)
-
             break
 
     save_data()
@@ -180,4 +202,5 @@ def admin_action():
 
 if __name__ == "__main__":
     load_data()
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.getenv("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
