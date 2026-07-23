@@ -89,11 +89,14 @@ def send_discord_webhook(message):
         print("ОШИБКА DISCORD: Не задан DISCORD_WEBHOOK_URL!")
         return
     
-    # Меняем discord.com на canary.discord.com (официальный тестовый сервер Discord, где нет бана Render-IP)
+    # Добавляем разделитель ─────────────── только для сообщений в Discord
+    message_with_divider = f"{message}\n\n───────────────"
+    
+    # Заменяем домен на canary, чтобы обходить блокировку Cloudflare на Render
     url = DISCORD_WEBHOOK_URL.replace("discord.com", "canary.discord.com")
 
     payload = {
-        "content": message
+        "content": message_with_divider
     }
 
     headers = {
