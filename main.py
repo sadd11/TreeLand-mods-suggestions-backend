@@ -23,9 +23,8 @@ TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TG_THREAD_ID = os.getenv("TELEGRAM_THREAD_ID")
 
-# Discord Bot
-DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
+# Discord Webhook
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 cache_data = None
 
@@ -83,29 +82,29 @@ def send_tg_notification(message):
         print(f"Ошибка отправки в TG: {e}")
 
 
-# ---------------- Discord Bot API ----------------
+# ---------------- Discord Webhook ----------------
 
-def send_discord_bot_message(message):
-    if not DISCORD_BOT_TOKEN or not DISCORD_CHANNEL_ID:
-        print("ОШИБКА DISCORD: Не задан DISCORD_BOT_TOKEN или DISCORD_CHANNEL_ID!")
+def send_discord_webhook(message):
+    if not DISCORD_WEBHOOK_URL:
+        print("ОШИБКА DISCORD: Не задан DISCORD_WEBHOOK_URL!")
         return
     
-    url = f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages"
-    
-    headers = {
-        "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    # Автоматически подменяем домен, чтобы обойти блокировку IP Render на стороне Cloudflare
+    url = DISCORD_WEBHOOK_URL.replace("discord.com", "discord-proxy.com")
 
     payload = {
         "content": message
     }
 
+    headers = {
+        "Content-Type": "application/json; charset=utf-8"
+    }
+
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=5)
-        print(f"Ответ Discord Bot API: Status {res.status_code}, Response: {res.text}")
+        print(f"Ответ Discord: Status {res.status_code}")
     except Exception as e:
-        print(f"Ошибка отправки через Discord бота: {e}")
+        print(f"Ошибка отправки в Discord: {e}")
 
 
 # ---------------- API ----------------
@@ -166,25 +165,25 @@ def admin_action():
             if action == "approve":
                 m["status"] = "approved"
                 
-                # Текст для Telegram
+                # Telegram
                 tg_msg = f"✅ *Мод одобрен!*\n\n🔗 [Открыть мод]({m['link']})\n📝 Описание: {m['desc']}"
                 send_tg_notification(tg_msg)
 
-                # Текст для Discord
+                # Discord
                 ds_msg = f"✅ **Мод одобрен!**\n\n🔗 Ссылка: {m['link']}\n📝 Описание: {m['desc']}"
-                send_discord_bot_message(ds_msg)
+                send_discord_webhook(ds_msg)
 
             elif action == "reject":
                 m["status"] = "rejected"
                 m["reason"] = reason
                 
-                # Текст для Telegram
+                # Telegram
                 tg_msg = f"❌ *Мод отклонён*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
                 send_tg_notification(tg_msg)
 
-                # Текст для Discord
+                # Discord
                 ds_msg = f"❌ **Мод отклонён**\n\n🔗 Ссылка: {m['link']}\n🚫 Причина: {reason}"
-                send_discord_bot_message(ds_msg)
+                send_discord_webhook(ds_msg)
 
             elif action == "set_comment":
                 m["comment"] = comment
