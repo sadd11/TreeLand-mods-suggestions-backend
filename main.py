@@ -9,24 +9,33 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# Настройки SFTP
+# SFTP настройки
 SFTP_HOST = os.getenv("SFTP_HOST")
 SFTP_USER = os.getenv("SFTP_USER")
 SFTP_PASS = os.getenv("SFTP_PASS")
-ADMIN_PASSWORD = "tl-358856"
 REMOTE_FILE = "/home/container/tlmodssuggestions.json"
 
-# Настройки Telegram
+# Пароль админа
+ADMIN_PASSWORD = "tl-358856"
+
+# Telegram
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TG_THREAD_ID = os.getenv("TELEGRAM_THREAD_ID")
 
+# Discord Webhook
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
 cache_data = None
+
+
+# ---------------- SFTP ----------------
 
 def get_sftp():
     transport = paramiko.Transport((SFTP_HOST, 2022))
     transport.connect(username=SFTP_USER, password=SFTP_PASS)
     return paramiko.SFTPClient.from_transport(transport), transport
+
 
 def load_data():
     global cache_data
@@ -39,6 +48,7 @@ def load_data():
     except:
         cache_data = []
 
+
 def save_data():
     try:
         sftp, t = get_sftp()
@@ -49,8 +59,10 @@ def save_data():
     except Exception as e:
         print(f"Error saving: {e}")
 
+
+# ---------------- Telegram ----------------
+
 def send_tg_notification(message):
-    """Отправка сообщения в конкретную тему Telegram группы"""
     if not TG_TOKEN or not TG_CHAT_ID:
         return
     
@@ -61,40 +73,70 @@ def send_tg_notification(message):
         "text": message,
         "parse_mode": "Markdown"
     }
+
     try:
         requests.post(url, json=payload)
     except Exception as e:
         print(f"Ошибка отправки в TG: {e}")
 
+
+# ---------------- Discord Webhook ----------------
+
+def send_discord_webhook(message):
+    if not DISCORD_WEBHOOK_URL:
+        return
+    
+    payload = {
+        "content": message
+    }
+
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    except Exception as e:
+        print(f"Ошибка Discord Webhook: {e}")
+
+
+# ---------------- API ----------------
+
 @app.route("/list", methods=["GET"])
 def list_mods():
-    if cache_data is None: load_data()
+    if cache_data is None:
+        load_data()
     return jsonify(cache_data)
+
 
 @app.route("/add", methods=["POST"])
 def add_mod():
-    if cache_data is None: load_data()
+    if cache_data is None:
+        load_data()
+
     body = request.json
     new_id = int(time.time())
+
     new_item = {
         "id": new_id,
         "link": body.get("link"),
         "desc": body.get("desc", ""),
         "status": "pending"
     }
+
     cache_data.append(new_item)
     save_data()
+
     return jsonify({"status": "ok"})
+
 
 @app.route("/admin_action", methods=["POST"])
 def admin_action():
     global cache_data
     body = request.json
+
     if body.get("password") != ADMIN_PASSWORD:
         return jsonify({"error": "Auth"}), 403
 
-    if cache_data is None: load_data()
-    
+    if cache_data is None:
+        load_data()
+
     target_id = str(body.get("id"))
     action = body.get("action")
     reason = body.get("reason", "")
@@ -103,29 +145,34 @@ def admin_action():
     for m in cache_data:
         if str(m.get("id")) == target_id:
             msg = ""
+
             if action == "approve":
                 m["status"] = "approved"
                 msg = f"✅ *Мод одобрен!*\n\n🔗 [Открыть мод]({m['link']})\n📝 Описание: {m['desc']}"
+
             elif action == "reject":
                 m["status"] = "rejected"
                 m["reason"] = reason
-                msg = f"❌ *Мод отклонен*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
+                msg = f"❌ *Мод отклонён*\n\n🔗 [Открыть мод]({m['link']})\n🚫 Причина: {reason}"
+
             elif action == "set_comment":
                 m["comment"] = comment
-                # Для комментария уведомление можно не слать или сделать по желанию
+
             elif action == "delete":
                 cache_data = [mod for mod in cache_data if str(mod.get("id")) != target_id]
                 save_data()
                 return jsonify({"status": "ok"})
-            
+
             if msg:
                 send_tg_notification(msg)
+                send_discord_webhook(msg)
+
             break
-    
+
     save_data()
     return jsonify({"status": "ok"})
+
 
 if __name__ == "__main__":
     load_data()
     app.run(host="0.0.0.0", port=10000)
-    
