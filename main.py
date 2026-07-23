@@ -89,20 +89,21 @@ def send_discord_webhook(message):
         print("ОШИБКА DISCORD: Не задан DISCORD_WEBHOOK_URL!")
         return
     
-    # Автоматически подменяем домен, чтобы обойти блокировку IP Render на стороне Cloudflare
-    url = DISCORD_WEBHOOK_URL.replace("discord.com", "discord-proxy.com")
+    # Меняем discord.com на canary.discord.com (официальный тестовый сервер Discord, где нет бана Render-IP)
+    url = DISCORD_WEBHOOK_URL.replace("discord.com", "canary.discord.com")
 
     payload = {
         "content": message
     }
 
     headers = {
-        "Content-Type": "application/json; charset=utf-8"
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=5)
-        print(f"Ответ Discord: Status {res.status_code}")
+        print(f"Ответ Discord: Status {res.status_code}, Response: {res.text}")
     except Exception as e:
         print(f"Ошибка отправки в Discord: {e}")
 
